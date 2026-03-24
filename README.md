@@ -91,7 +91,7 @@
 
 ## 📸 Screenshots
 
-> _Add screenshots of your app here. Recommended: Splash → Login → Student Home → Scan → Admin Dashboard → Live Occupancy_
+> _Screenshots : To be added_
 
 | Splash | Login | Student Home |
 |:---:|:---:|:---:|
