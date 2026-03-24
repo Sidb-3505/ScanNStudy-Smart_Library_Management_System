@@ -79,13 +79,13 @@
 | **Auto-Refresh Timer** | The QR screen auto-refreshes the live count every second |
 
 ### ⚙️ System
-| Feature | Description                                                                    |
-|---|--------------------------------------------------------------------------------|
+| Feature | Description                                                                   |
+|---|-------------------------------------------------------------------------------|
 | **Real-Time Firestore Sync** | `DatabaseService` Firestore listener fires `notifyListeners()` on every change |
-| **Offline-safe local cache** | All reads come from an in-memory cache populated at app start                  |
-| **Role-based routing** | Admin and student see completely different navigation trees                    |
-| **Email + College ID login** | Supports collegeId@jecrcu.edu.in` format                                 |
-| **Animated Splash Screen** | Multi-stage animated logo with orb, shimmer, and slide-in effects              |
+| **Offline-safe local cache** | All reads come from an in-memory cache populated at app start                 |
+| **Role-based routing** | Admin and student see completely different navigation trees                   |
+| **Email + College ID login** | Supports collegeId@jecrcu.edu.in format                                 |
+| **Animated Splash Screen** | Multi-stage animated logo with orb, shimmer, and slide-in effects             |
 
 ---
 
