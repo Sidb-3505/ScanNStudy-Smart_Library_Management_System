@@ -34,7 +34,7 @@ class _ScanScreenState extends State<ScanScreen> {
     if (scannedWindow == null) return false;
 
     final currentWindow = DateTime.now().millisecondsSinceEpoch ~/ 5000;
-    return (currentWindow - scannedWindow).abs() <= 2; // ±3s grace
+    return (currentWindow - scannedWindow).abs() <= 2; // +10s grace
   }
 
   Future<void> _onDetect(BarcodeCapture capture) async {
