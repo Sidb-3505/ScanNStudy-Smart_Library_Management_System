@@ -4,7 +4,7 @@ class AppConstants {
   static const adminPassword = 'admin123';
 
   // Library QR code value
-  static const libraryQrValue = 'LIBRARY_SMART_ENTRY_2024';
+  static const libraryQrValue = 'LIBRARY_ENTRY';
 
   // Padding
   static const double paddingSmall = 8.0;

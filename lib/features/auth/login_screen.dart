@@ -137,40 +137,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                // Demo hint
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.2),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Demo Credentials',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      SizedBox(height: 6),
-                      Text(
-                        'Student: CS2021001 / 1234',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      Text(
-                        'Admin: ADMIN001 / admin123',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
                 Center(
                   child: GestureDetector(
                     onTap: () =>

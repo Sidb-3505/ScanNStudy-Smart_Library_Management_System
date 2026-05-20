@@ -1,16 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:gal/gal.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:screenshot/screenshot.dart';
 
-import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/date_utils.dart';
 import '../../models/visit_log_model.dart';
@@ -25,14 +19,16 @@ class QrGeneratorScreen extends StatefulWidget {
 
 class _QrGeneratorScreenState extends State<QrGeneratorScreen>
     with WidgetsBindingObserver {
-  final String _qrValue = AppConstants.libraryQrValue;
+  String _qrValue = _buildQrValue();
 
-  // ✅ FIX 1: Moved here from build() — must be in State, not build
+  static String _buildQrValue() {
+    final window = DateTime.now().millisecondsSinceEpoch ~/ 5000;
+    return 'SMART_LIB:$window';
+  }
+
   final ScreenshotController _screenshotController = ScreenshotController();
 
   Timer? _refreshTimer;
-  bool _isSaving = false;
-  bool _isPrinting = false;
 
   @override
   void initState() {
@@ -45,6 +41,8 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen>
     _refreshTimer?.cancel();
     _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
+        final newVal = _buildQrValue();
+        if (newVal != _qrValue) setState(() => _qrValue = newVal);
         context.read<VisitProvider>().refresh();
       }
     });
@@ -66,111 +64,16 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen>
     super.dispose();
   }
 
-  // ─── Print QR ─────────────────────────────────────────────────────────────
-  Future<void> _printQr() async {
-    setState(() => _isPrinting = true);
-
-    try {
-      final image = await _screenshotController.capture(pixelRatio: 3.0);
-      if (image == null) return;
-
-      await Printing.layoutPdf(
-        onLayout: (format) async {
-          final pdf = pw.Document();
-          final pdfImage = pw.MemoryImage(image);
-
-          pdf.addPage(
-            pw.Page(
-              pageFormat: format,
-              build: (_) => pw.Center(
-                child: pw.Column(
-                  mainAxisSize: pw.MainAxisSize.min,
-                  children: [
-                    pw.Text(
-                      'Smart Library Entry QR',
-                      style: pw.TextStyle(
-                        fontSize: 24,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 20),
-                    pw.Image(pdfImage, width: 300, height: 300),
-                    pw.SizedBox(height: 20),
-                    pw.Text(
-                      'Scan to mark Entry / Exit',
-                      style: const pw.TextStyle(fontSize: 16),
-                    ),
-                    pw.SizedBox(height: 8),
-                    pw.Text(
-                      'JECRCU Library',
-                      style: const pw.TextStyle(fontSize: 14),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-          return pdf.save();
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Print failed: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isPrinting = false);
-    }
-  }
-
-  // ─── Save to Gallery ──────────────────────────────────────────────────────
-  Future<void> _saveToGallery() async {
-    setState(() => _isSaving = true);
-
-    try {
-      final image = await _screenshotController.capture(pixelRatio: 3.0);
-      if (image == null) return;
-
-      // Write to temp file
-      final tempDir = await getTemporaryDirectory();
-      final tempFile = File(
-        '${tempDir.path}/library_qr_${DateTime.now().millisecondsSinceEpoch}.png',
-      );
-      await tempFile.writeAsBytes(image);
-
-      // Save to gallery using gal
-      await Gal.putImage(tempFile.path);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ QR saved to gallery!'),
-            backgroundColor: AppColors.secondary,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Save failed: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final visits = context.watch<VisitProvider>();
-    final recentLogs = visits.getAllLogs().take(8).toList();
+    final today = DateTime.now();
+    final recentLogs = visits.getAllLogs().where((log) {
+      final d = log.entryTime;
+      return d.year == today.year &&
+          d.month == today.month &&
+          d.day == today.day;
+    }).toList();
     final insideCount = visits.studentsInsideNow;
     final todayEntries = visits.totalEntriesToday;
 
@@ -323,63 +226,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen>
                       ],
                     ),
                   ),
-                ),
-
-                const SizedBox(height: 14),
-
-                // ✅ FIX 3: Print & Save buttons added to UI
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _isSaving ? null : _saveToGallery,
-                        icon: _isSaving
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.download, size: 18),
-                        label: Text(_isSaving ? 'Saving...' : 'Save QR'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.secondary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _isPrinting ? null : _printQr,
-                        icon: _isPrinting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.print, size: 18),
-                        label: Text(_isPrinting ? 'Opening...' : 'Print QR'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
 
                 const SizedBox(height: 14),
@@ -584,133 +430,237 @@ class _LiveFeedTile extends StatelessWidget {
 
   const _LiveFeedTile({required this.log, this.isNew = false});
 
+  String _duration() {
+    final end = log.exitTime ?? DateTime.now();
+    final diff = end.difference(log.entryTime);
+    final h = diff.inHours;
+    final m = diff.inMinutes % 60;
+    if (h > 0) return '${h}h ${m}m';
+    return '${m}m';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isEntry = log.isActive;
-    final color = isEntry ? AppColors.secondary : AppColors.primary;
-    final time = isEntry ? log.entryTime : log.exitTime!;
+    final isInside = log.isActive; // currently inside
+    final accentColor = isInside ? AppColors.secondary : AppColors.primary;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: isNew ? color.withOpacity(0.06) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border(
-          left: BorderSide(color: color, width: 3),
-          top: isNew
-              ? BorderSide(color: color.withOpacity(0.3), width: 1)
-              : BorderSide.none,
-          right: isNew
-              ? BorderSide(color: color.withOpacity(0.3), width: 1)
-              : BorderSide.none,
-          bottom: isNew
-              ? BorderSide(color: color.withOpacity(0.3), width: 1)
-              : BorderSide.none,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isNew ? accentColor.withOpacity(0.4) : Colors.grey.shade100,
         ),
-        boxShadow: isNew
-            ? [
-                BoxShadow(
-                  color: color.withOpacity(0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4)],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: color.withOpacity(0.12),
-            child: Text(
-              log.studentName[0].toUpperCase(),
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
+        boxShadow: [
+          BoxShadow(
+            color: isNew
+                ? accentColor.withOpacity(0.12)
+                : Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            // Avatar + status dot
+            Stack(
               children: [
-                Row(
-                  children: [
-                    Text(
-                      log.studentName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: AppColors.textDark,
-                      ),
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: accentColor.withOpacity(0.12),
+                  child: Text(
+                    log.studentName[0].toUpperCase(),
+                    style: TextStyle(
+                      color: accentColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
                     ),
-                    if (isNew) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'NEW',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
-                Text(
-                  log.studentCollegeId,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textLight,
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: isInside ? AppColors.secondary : Colors.grey,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  isEntry ? '⬆ Entry' : '⬇ Exit',
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+            const SizedBox(width: 10),
+
+            // Name + ID + times
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          log.studentName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: AppColors.textDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isNew) ...[
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accentColor,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'NEW',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 2),
+                  Text(
+                    log.studentCollegeId,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textLight,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  // Entry & exit times row
+                  Row(
+                    children: [
+                      _TimeChip(
+                        icon: Icons.login,
+                        label: AppDateUtils.formatTime(log.entryTime),
+                        color: AppColors.secondary,
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.arrow_forward,
+                        size: 10,
+                        color: AppColors.textLight,
+                      ),
+                      const SizedBox(width: 4),
+                      _TimeChip(
+                        icon: Icons.logout,
+                        label: log.exitTime != null
+                            ? AppDateUtils.formatTime(log.exitTime!)
+                            : '—',
+                        color: log.exitTime != null
+                            ? AppColors.primary
+                            : Colors.grey,
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          _duration(),
+                          style: const TextStyle(
+                            fontSize: 9,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 3),
-              Text(
-                AppDateUtils.formatTime(time),
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textLight,
-                ),
+            ),
+            const SizedBox(width: 8),
+
+            // IN / OUT badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: accentColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: accentColor.withOpacity(0.3)),
               ),
-            ],
-          ),
-        ],
+              child: Column(
+                children: [
+                  Icon(
+                    isInside ? Icons.sensor_door : Icons.exit_to_app,
+                    color: accentColor,
+                    size: 16,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isInside ? 'IN' : 'OUT',
+                    style: TextStyle(
+                      color: accentColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+// ─── Small time chip ──────────────────────────────────────────────────────────
+
+class _TimeChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _TimeChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 9, color: color),
+        const SizedBox(width: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

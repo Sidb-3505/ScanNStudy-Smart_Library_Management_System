@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/double_back_exit.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/visit_provider.dart';
 import '../../services/scan_service.dart';
@@ -27,17 +26,49 @@ class _ScanScreenState extends State<ScanScreen> {
     super.dispose();
   }
 
+  bool isValidLibraryQr(String scanned) {
+    final parts = scanned.split(':');
+    if (parts.length != 2 || parts[0] != 'SMART_LIB') return false;
+
+    final scannedWindow = int.tryParse(parts[1]);
+    if (scannedWindow == null) return false;
+
+    final currentWindow = DateTime.now().millisecondsSinceEpoch ~/ 5000;
+    return (currentWindow - scannedWindow).abs() <= 2; // ±3s grace
+  }
+
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_isProcessing) return;
     final raw = capture.barcodes.firstOrNull?.rawValue;
     if (raw == null) return;
+
+    if (!isValidLibraryQr(raw)) {
+      await _controller.stop(); // ✅ add this
+      setState(() {
+        _result = _ScanResultData(
+          success: false,
+          isEntry: false,
+          title: 'Invalid QR Code',
+          subtitle: 'QR has expired or is not a library code.',
+          color: AppColors.danger,
+          icon: Icons.qr_code_2,
+        );
+      });
+      Future.delayed(const Duration(milliseconds: 2500), () {
+        if (mounted) Navigator.pop(context);
+      });
+      return;
+    }
 
     setState(() => _isProcessing = true);
     await _controller.stop();
 
     final user = context.read<AuthProvider>().currentUser!;
     final visitProvider = context.read<VisitProvider>();
-    final scanResult = await visitProvider.processScan(raw, user.id);
+    final scanResult = await visitProvider.processScan(
+      'LIBRARY_ENTRY',
+      user.id,
+    );
 
     _ScanResultData resultData;
     switch (scanResult) {
@@ -99,110 +130,102 @@ class _ScanScreenState extends State<ScanScreen> {
     final user = context.read<AuthProvider>().currentUser!;
     final isInside = context.watch<VisitProvider>().isStudentInside(user.id);
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          DoubleBackExit.handle(context);
-        }
-      },
-      child: Scaffold(
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text(AppStrings.scanQR),
         backgroundColor: Colors.black,
-        appBar: AppBar(
-          title: const Text(AppStrings.scanQR),
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.flash_on),
-              onPressed: () => _controller.toggleTorch(),
-            ),
-          ],
-        ),
-        body: Stack(
-          children: [
-            // Camera
-            MobileScanner(controller: _controller, onDetect: _onDetect),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.flash_on),
+            onPressed: () => _controller.toggleTorch(),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          // Camera
+          MobileScanner(controller: _controller, onDetect: _onDetect),
 
-            // Dim overlay + scan frame
-            CustomPaint(
-              painter: _ScanOverlayPainter(),
-              child: const SizedBox.expand(),
-            ),
+          // Dim overlay + scan frame
+          CustomPaint(
+            painter: _ScanOverlayPainter(),
+            child: const SizedBox.expand(),
+          ),
 
-            // Center content
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Status badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isInside
-                          ? AppColors.secondary.withOpacity(0.9)
-                          : AppColors.primary.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isInside ? Icons.sensors : Icons.sensors_off,
+          // Center content
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Status badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isInside
+                        ? AppColors.secondary.withOpacity(0.9)
+                        : AppColors.primary.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isInside ? Icons.sensors : Icons.sensors_off,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        isInside
+                            ? 'Currently Inside — Scan to Exit'
+                            : 'Currently Outside — Scan to Enter',
+                        style: const TextStyle(
                           color: Colors.white,
-                          size: 14,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          isInside
-                              ? 'Currently Inside — Scan to Exit'
-                              : 'Currently Outside — Scan to Enter',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  // Spacer to push below the scan box
-                  const SizedBox(height: 280),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Text(
-                      'Point at the library QR code',
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                    ),
+                ),
+                // Spacer to push below the scan box
+                const SizedBox(height: 280),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
                   ),
-                ],
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Text(
+                    'Point at the library QR code',
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Result overlay
+          if (_result != null) _ResultOverlay(data: _result!),
+
+          // Loading
+          if (_isProcessing)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: CircularProgressIndicator(color: Colors.white),
               ),
             ),
-
-            // Result overlay
-            if (_result != null) _ResultOverlay(data: _result!),
-
-            // Loading
-            if (_isProcessing)
-              Container(
-                color: Colors.black54,
-                child: const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-              ),
-          ],
-        ),
+        ],
       ),
     );
   }
