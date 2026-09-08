@@ -91,7 +91,7 @@
 
 ## 📸 Screenshots
 
-> _Screenshots : To be added_
+> _Screenshots : 
 
 | Splash | Login | Student Home |
 |:---:|:---:|:---:|
